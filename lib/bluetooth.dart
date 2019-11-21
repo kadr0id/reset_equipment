@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue/flutter_blue.dart';
+import 'package:reset_equipment/main.dart';
 
 import 'gears.dart';
 
@@ -18,12 +19,12 @@ enum ScannerError {
 }
 
 class MyBluetooth {
-
+  String logs;
   /// If true - more verbose prints will be shown.
   static const IS_DEBUGGING = true;
   /// If true - every found device will be reset to initial ID.
   /// It is required that device passes the scanning by having correct ID.
-  static const IS_RESETTING = false;
+  static const IS_RESETTING = true;
 
   /// Create fake models as if devices were actually connected but they are not.
   /// Use only for testing and be careful not to forget to reset it to FALSE
@@ -138,6 +139,7 @@ class MyBluetooth {
       return gun.id();
     } else {
       print('ID mismatch! Something went badly wrong');
+      logs = 'ID mismatch! Something went badly wrong';
       return null;
     }
   }
@@ -175,7 +177,7 @@ class PipelinedScanner {
   Timer _timeout;
   List<BluetoothDevice> _ignoreList = [];
   List<DeviceIdentifier> _currentMacScan = [];
-
+  set slogs(String msg) => update(msg);
   bool get isScanning => _currentScannerIdentifier != 0;
 
   PipelinedScanner(this._b);
@@ -187,13 +189,18 @@ class PipelinedScanner {
       print('Tried to start scanning for MACs while '
           'Gear ID scanner was running. Only one type of scan is supported at '
           'once');
+      slogs = 'Tried to start scanning for MACs while '
+          'Gear ID scanner was running. Only one type of scan is supported at '
+          'once';
       return;
     }
     _currentMacScan.addAll(ids);
     if (_checkScanStopped()) {
       print('Start scanning for devices: $ids');
+      slogs = 'Start scanning for devices: $ids';
     } else {
       print('Adding more IDs to scanner: $ids');
+      slogs = 'Adding more IDs to scanner: $ids';
       return;
     }
     _currentScannerIdentifier = DateTime.now().millisecondsSinceEpoch;
@@ -211,6 +218,7 @@ class PipelinedScanner {
       // which causes double-start error.
       if (MyBluetooth.IS_DEBUGGING)
         print('Stop scanner');
+      slogs = 'Stop scanner';
       await _b._blue.stopScan();
 
       for (ScanResult result in result) {
@@ -232,6 +240,7 @@ class PipelinedScanner {
 
   Future<void> _connect(_SpDevice sp, Function(ScannerError err) onFinish) {
     print('Next device to connect: $sp');
+    slogs = 'Next device to connect: $sp';
     var onDrop = () {
       _ignoreList.remove(sp.device);
       _b.onAnyConnectionChanged(false);
@@ -239,6 +248,7 @@ class PipelinedScanner {
       // We don't need to schedule scan if scanner is already working.
       // It will re-find this dropped device.
       print('Rescanning for $sp will begin now');
+      slogs = 'Rescanning for $sp will begin now';
       scanForMacs([sp.device.id]);
     };
     return sp._connect(
@@ -249,6 +259,7 @@ class PipelinedScanner {
             sp.disconnect();
             isErr = true;
             print('$sp was not responding so connection was interrupted');
+            slogs = '$sp was not responding so connection was interrupted';
             onDrop();
           });
           if (isErr) {
@@ -257,7 +268,7 @@ class PipelinedScanner {
 
           if (_currentScanId == null || sp.id() == _currentScanId) {
             print('Found ID match in $sp');
-
+            slogs = 'Found ID match in $sp';
             // Check if we already have connected to a SP with same ID
             // this allows to react on situation when several SP devices
             // of same type have the same ID (for example - several
@@ -324,6 +335,7 @@ class PipelinedScanner {
             }
             if (areDuplicates) {
               print('Found duplicated ID in device of type: ${sp.runtimeType}');
+              slogs = 'Found duplicated ID in device of type: ${sp.runtimeType}';
               _b.disconnectAll();
               stopAndReset();
               onFinish(ScannerError.DuplicatesFound);
@@ -344,6 +356,8 @@ class PipelinedScanner {
           } else {
             print('ID mismatch in $sp with ID ${sp.id()}, '
                 'will be disconnected and ignored');
+            slogs = 'ID mismatch in $sp with ID ${sp.id()}, '
+                'will be disconnected and ignored';
             _ignoreList.add(sp.device);
             sp.disconnect();
           }
@@ -357,6 +371,7 @@ class PipelinedScanner {
       onDrop: onDrop,
       onError: () {
         print('Failed to connect. Forgetting about $sp');
+        slogs = 'Failed to connect. Forgetting about $sp';
         _ignoreList.remove(sp.device);
       },
     );
@@ -367,11 +382,13 @@ class PipelinedScanner {
   bool _checkScanStopped() {
     if (_currentScanId != null) {
       print('Already scanning for ID $_currentScanId, new scan request is ignored');
+      slogs = 'Already scanning for ID $_currentScanId, new scan request is ignored';
       return false;
     }
     if (isScanning) {
       // MAC address scanner seem to be running.
       print('Scanner already running');
+      slogs = 'Scanner already running';
       return false;
     }
 
@@ -392,6 +409,7 @@ class PipelinedScanner {
       return;
     onFinish ??= (_) {};
     print('Start scanning for ID: $id');
+    slogs = 'Start scanning for ID: $id';
     _currentScanId = id;
     _currentScannerIdentifier = DateTime.now().millisecondsSinceEpoch;
     int currentScannerIdentifier = _currentScannerIdentifier;
@@ -408,6 +426,7 @@ class PipelinedScanner {
     while (_isThisScanning(currentScannerIdentifier)) {
       if (MyBluetooth.IS_DEBUGGING)
         print('Start scanner');
+      slogs = 'Start scanner';
       var result;
       try {
         await _b._blue.stopScan(); // ensure scanner is stopped.
@@ -415,6 +434,7 @@ class PipelinedScanner {
       } catch (_) {
         // Can appear PlatformException if adapter is off.
         print('Scan iteration failed and scanner will be stoped');
+        slogs = 'Scan iteration failed and scanner will be stoped';
         stopAndReset();
         return;
       }
@@ -425,10 +445,12 @@ class PipelinedScanner {
       // which causes double-start error.
       if (MyBluetooth.IS_DEBUGGING)
         print('Stop scanner');
+      slogs = 'Stop scanner';
       await _b._blue.stopScan();
 
       if (MyBluetooth.IS_DEBUGGING) {
         print('List of scanned devices: ' + result.map((ScanResult r) => r.device.name).toString());
+        slogs = 'List of scanned devices: ' + result.map((ScanResult r) => r.device.name).toString();
       }
       for (ScanResult result in result) {
         if (!_isThisScanning(currentScannerIdentifier))
@@ -508,6 +530,7 @@ abstract class _SpDevice {
   bool _isManualDisconnect = false;
   bool _isDisconnected = false;
   bool get isDisconnected => _isDisconnected;
+  String slogs;
 
   /// Will be called when connection gets dropped or manually disconnected.
   Function() _onDisconnect = () {};
@@ -560,7 +583,7 @@ abstract class _SpDevice {
     }
 
     print('Connected to $this');
-
+    slogs = 'Connected to $this';
     // Listen to changes in connection. React on disconnect.
     var listen;
     listen = device.state.listen((newState) {
@@ -593,6 +616,7 @@ abstract class _SpDevice {
   Future<void> _setupCharacteristics() async {
     if (MyBluetooth.IS_DEBUGGING) {
       print('Setting up characteristics of $this');
+      slogs = 'Setting up characteristics of $this';
     }
 
     List<BluetoothService> services = await device.discoverServices();
@@ -616,6 +640,7 @@ abstract class _SpDevice {
             return;
           }
           print('Characteristics of $this are set');
+          slogs = 'Characteristics of $this are set';
           return;
         }
       }
@@ -624,6 +649,7 @@ abstract class _SpDevice {
 
   Future<dynamic> disconnect() {
     print('Disconnecting $this');
+    slogs = 'Disconnecting $this';
     _isManualDisconnect = true;
     _onDisconnect();
     myBluetooth.onAnyConnectionChanged(false);
@@ -662,11 +688,13 @@ abstract class _SpDevice {
   Future<Null> applyData([int retryCount = 5]) async {
     if (retryCount < 0) {
       print('Send retry counter has run down - failed to send data, aborting');
+      slogs = 'Send retry counter has run down - failed to send data, aborting';
       return;
     }
 
     if (MyBluetooth.IS_DEBUGGING) {
       print('Sending data to $this: $_model, retry count: $retryCount');
+      slogs = 'Sending data to $this: $_model, retry count: $retryCount';
     }
     var modelHash = _model.hashCode;
     var modelCopy = _model.toBytes();
@@ -680,6 +708,7 @@ abstract class _SpDevice {
     if (modelHash != _model.hashCode) {
       if (MyBluetooth.IS_DEBUGGING) {
         print('Device did not accept packet, will resend');
+        slogs = 'Device did not accept packet, will resend';
       }
       _model.updateFrom(modelCopy);
       applyData(retryCount - 1);
@@ -715,6 +744,7 @@ class _SpGun extends _SpDevice {
     }
     if (MyBluetooth.IS_DEBUGGING) {
       print('Update object to: $_model');
+      slogs = 'Update object to: $_model';
     }
   }
 
@@ -751,6 +781,7 @@ class _SpVest extends _SpDevice {
     }
     if (MyBluetooth.IS_DEBUGGING) {
       print('Update object to: $_model');
+      slogs = 'Update object to: $_model';
     }
   }
 
@@ -792,6 +823,7 @@ class _SpHeadset extends _SpDevice {
     }
     if (MyBluetooth.IS_DEBUGGING) {
       print('Update object to: $_model');
+      slogs = 'Update object to: $_model';
     }
   }
 
